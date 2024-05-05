@@ -11,8 +11,8 @@ use rss::Item;
 
 #[derive(Envconfig)]
 struct Config {
-    #[envconfig(from = "GAZZETTA_FEED_URL")]
-    feed_url: String,
+    #[envconfig(from = "GAZZETTA_FEEDS_URL")]
+    feeds_url: String,
     #[envconfig(from = "GAZZETTA_POLL_INTERVAL_MS", default = "1800000")] // 30 minutes
     poll_interval_ms: u64,
     #[envconfig(from = "GAZZETTA_CACHE_EXPIRE_TIME_S", default = "172800")] // 2 days
@@ -31,7 +31,7 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::init_from_env()?;
     info!(
         "Polling feed: {} every {} ms",
-        config.feed_url, config.poll_interval_ms
+        config.feeds_url, config.poll_interval_ms
     );
 
     info!("Setup redis client to redis URL: {}", config.redis_url);
@@ -66,17 +66,21 @@ async fn setup_and_poll(config: &Config, client: &redis::Client) -> anyhow::Resu
     let mut producer = RedisJobProducer::new(config.redis_new_article_task_queue.as_str(), rsmq);
     let _ = producer.setup().await; // ignore error, queue could already exist
 
-    info!("Trying to poll feed: {}", config.feed_url);
-    poll_feed(config, &mut con, &mut producer).await?;
+    let feeds = config.feeds_url.split(',').collect::<Vec<&str>>();
+    for feed_url in feeds {
+        info!("Trying to poll feed: {}", feed_url);
+        poll_feed(feed_url, config, &mut con, &mut producer).await?;
+    }
     Ok(())
 }
 
 async fn poll_feed(
+    feed_url: &str,
     config: &Config,
     article_cache: &mut impl KeyValueCache,
     job_producer: &mut impl JobProducer,
 ) -> anyhow::Result<()> {
-    let response = reqwest::get(&config.feed_url).await?;
+    let response = reqwest::get(feed_url).await?;
     let content = response.bytes().await?;
     let channel = rss::Channel::read_from(&content[..])?;
 

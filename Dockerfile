@@ -4,11 +4,11 @@ WORKDIR /app
 FROM chef AS planner
 COPY ./Cargo.toml ./Cargo.lock ./
 COPY ./gazzetta-common/Cargo.toml ./gazzetta-common/
-COPY ./gazzetta-notify/Cargo.toml ./gazzetta-notify/
+COPY ./gazzetta-telegram/Cargo.toml ./gazzetta-telegram/
 COPY ./gazzetta-server/Cargo.toml ./gazzetta-server/
 COPY ./gazzetta-injest/Cargo.toml ./gazzetta-injest/
 COPY ./gazzetta-common/src ./gazzetta-common/src
-COPY ./gazzetta-notify/src ./gazzetta-notify/src
+COPY ./gazzetta-telegram/src ./gazzetta-telegram/src
 COPY ./gazzetta-server/src ./gazzetta-server/src
 COPY ./gazzetta-injest/src ./gazzetta-injest/src
 RUN cargo chef prepare

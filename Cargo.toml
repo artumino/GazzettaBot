@@ -2,7 +2,7 @@
 resolver = "2"
 members = [ "gazzetta-common",
     "gazzetta-injest",
-    "gazzetta-notify",
+    "gazzetta-telegram",
     "gazzetta-server"
 ]
 

@@ -54,11 +54,11 @@ async fn consume_new_items(
     rqsm: &mut Rsmq,
     cache: &mut impl KeyValueCache,
 ) -> anyhow::Result<()> {
+    info!(
+        "Consumer waiting for new items in queue: {}",
+        config.new_article_task_queue
+    );
     loop {
-        info!(
-            "Consumer waiting for new items in queue: {}",
-            config.new_article_task_queue
-        );
         let msg: Option<RsmqMessage<String>> = rqsm
             .receive_message(&config.new_article_task_queue, None)
             .await?;
@@ -76,28 +76,37 @@ async fn consume_new_items(
 
             let item: Item = serde_json::from_str(item.unwrap().as_str())?;
             let search_keywords = OnceCell::new();
-            let search_keywords = search_keywords
-                .get_or_init(|| config.search_keywords.split(',').collect::<Vec<&str>>());
+            let search_keywords = search_keywords.get_or_init(|| {
+                config
+                    .search_keywords
+                    .split(',')
+                    .map(|word| word.to_lowercase())
+                    .collect::<Vec<String>>()
+            });
+
+            let lowercase_title = item
+                .title
+                .as_ref()
+                .map(|title| title.to_lowercase())
+                .unwrap_or_default();
+            let lowercase_summary = item
+                .summary
+                .as_ref()
+                .map(|desc| desc.to_lowercase())
+                .unwrap_or_default();
+            let lowercase_content = item
+                .content
+                .as_ref()
+                .map(|content| content.to_lowercase())
+                .unwrap_or_default();
 
             let matched_words: Vec<_> = search_keywords
                 .iter()
                 .filter(|keyword| {
-                    item.title
-                        .as_ref()
-                        .map(|title| title.contains(*keyword))
-                        .unwrap_or(false)
-                        || item
-                            .summary
-                            .as_ref()
-                            .map(|desc| desc.contains(*keyword))
-                            .unwrap_or(false)
-                        || item
-                            .content
-                            .as_ref()
-                            .map(|content| content.contains(*keyword))
-                            .unwrap_or(false)
+                    lowercase_title.contains(*keyword)
+                        || lowercase_summary.contains(*keyword)
+                        || lowercase_content.contains(*keyword)
                 })
-                .copied()
                 .collect();
 
             // TODO: Some outboxing here would be needed, actually

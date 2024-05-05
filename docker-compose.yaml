@@ -6,7 +6,7 @@ services:
       args:
         COMPONENT_NAME: gazzetta-injest
     environment:
-      GAZZETTA_FEED_URL: "https://www.gazzettaufficiale.it/rss/SG"
+      GAZZETTA_FEEDS_URL: "https://www.gazzettaufficiale.it/rss/SG,https://www.gazzettaufficiale.it/rss/S1,https://www.gazzettaufficiale.it/rss/S2,https://www.gazzettaufficiale.it/rss/S3,https://www.gazzettaufficiale.it/rss/S4,https://www.gazzettaufficiale.it/rss/S5,https://www.gazzettaufficiale.it/rss/P2"
       GAZZETTA_REDIS_URL: "redis://redis:6379"
       GAZZETTA_NEW_ARTICLE_TASK_QUEUE: "article-task-queue"
       RUST_LOG: "info"
@@ -22,7 +22,7 @@ services:
       GAZZETTA_REDIS_URL: "redis://redis:6379"
       GAZZETTA_NEW_ARTICLE_TASK_QUEUE: "article-task-queue"
       GAZZETTA_NOTFIY_TASK_QUEUE: "notify-task-queue"
-      SEARCH_KEYWORDS: "ecobonus,rottamazione,rottamare,incentivi,incentivo"
+      SEARCH_KEYWORDS: "ecobonus,rottamazione,rottamare,rottamando,incentivi,incentivo,g/km,kg/km"
       RUST_LOG: "info"
     depends_on:
       - redis
