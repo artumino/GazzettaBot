@@ -25,14 +25,16 @@ struct Config {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let config = Config::init_from_env()?;
-    info!("Polling feed: {} every {} ms", config.feed_url, config.poll_interval_ms);
-
+    info!(
+        "Polling feed: {} every {} ms",
+        config.feed_url, config.poll_interval_ms
+    );
 
     info!("Setup redis client to redis URL: {}", config.redis_url);
     let client = redis::Client::open(config.redis_url.as_str())?;
 
     loop {
-        retry(ExponentialBackoff::<SystemClock>::default(),  || async {
+        retry(ExponentialBackoff::<SystemClock>::default(), || async {
             match setup_and_poll(&config, &client).await {
                 Ok(_) => Ok(()),
                 Err(e) => {
@@ -41,7 +43,7 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         });
-        
+
         tokio::time::sleep(Duration::from_millis(config.poll_interval_ms)).await;
     }
 }
@@ -51,7 +53,10 @@ async fn setup_and_poll(config: &Config, client: &redis::Client) -> anyhow::Resu
     let mut con = client.get_multiplexed_async_connection().await?;
     let job_con = con.clone();
 
-    info!("Setting up redis queue: {}", config.redis_new_article_task_queue);
+    info!(
+        "Setting up redis queue: {}",
+        config.redis_new_article_task_queue
+    );
     let rsmq = Rsmq::new_with_connection(job_con, false, None);
     let mut producer = RedisJobProducer::new(config.redis_new_article_task_queue.as_str(), rsmq);
 
@@ -60,25 +65,40 @@ async fn setup_and_poll(config: &Config, client: &redis::Client) -> anyhow::Resu
     Ok(())
 }
 
-async fn poll_feed(config: &Config, article_cache: &mut impl KeyValueCache, job_producer: &mut impl JobProducer) -> anyhow::Result<()> {
+async fn poll_feed(
+    config: &Config,
+    article_cache: &mut impl KeyValueCache,
+    job_producer: &mut impl JobProducer,
+) -> anyhow::Result<()> {
     let response = reqwest::get(&config.feed_url).await?;
     let content = response.bytes().await?;
     let channel = rss::Channel::read_from(&content[..])?;
-    
+
     for item in channel.items() {
         process_item(config, item, article_cache, job_producer).await?;
     }
     Ok(())
 }
 
-async fn process_item(config: &Config, item: &Item, article_cache: &mut impl KeyValueCache, job_producer: &mut impl JobProducer) -> anyhow::Result<()> {
+async fn process_item(
+    config: &Config,
+    item: &Item,
+    article_cache: &mut impl KeyValueCache,
+    job_producer: &mut impl JobProducer,
+) -> anyhow::Result<()> {
     if let Ok(item_key) = compute_cache_key(item) {
         info!("Processing item {}", &item_key);
 
         let item_content = article_cache.get(&item_key).await?;
         if item_content.is_none() {
             let item = fetch_item(item).await?;
-            article_cache.set(&item_key, serde_json::to_string(&item)?.as_str(), Duration::from_secs(config.cache_expire_time_s)).await?;
+            article_cache
+                .set(
+                    &item_key,
+                    serde_json::to_string(&item)?.as_str(),
+                    Duration::from_secs(config.cache_expire_time_s),
+                )
+                .await?;
             job_producer.produce_job(&item.header).await?;
         }
     }
@@ -86,7 +106,10 @@ async fn process_item(config: &Config, item: &Item, article_cache: &mut impl Key
 }
 
 async fn fetch_item(item: &Item) -> anyhow::Result<gazzetta_common::Item> {
-    let header = ItemHeader::new(item.title().context("Missing title")?.to_string(), item.pub_date().context("Missing pub date")?.to_string());
+    let header = ItemHeader::new(
+        item.title().context("Missing title")?.to_string(),
+        item.pub_date().context("Missing pub date")?.to_string(),
+    );
     let content = if let Some(link) = item.link() {
         let response = reqwest::get(link).await?;
         Some(response.text().await?)
@@ -102,7 +125,11 @@ async fn fetch_item(item: &Item) -> anyhow::Result<gazzetta_common::Item> {
 }
 
 fn compute_cache_key(item: &Item) -> anyhow::Result<String> {
-    Ok(format!("({},{})", item.title().context("Missing title")?, item.pub_date().context("Missing pub date")?))
+    Ok(format!(
+        "({},{})",
+        item.title().context("Missing title")?,
+        item.pub_date().context("Missing pub date")?
+    ))
 }
 
 trait JobProducer {
@@ -116,7 +143,9 @@ struct RedisJobProducer<'a> {
 
 impl<'a> JobProducer for RedisJobProducer<'a> {
     async fn produce_job(&mut self, item: &ItemHeader) -> anyhow::Result<()> {
-        self.rqsm.send_message(self.queue_name, serde_json::to_string(item)?, None).await?;
+        self.rqsm
+            .send_message(self.queue_name, serde_json::to_string(item)?, None)
+            .await?;
         Ok(())
     }
 }

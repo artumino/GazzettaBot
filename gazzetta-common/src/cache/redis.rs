@@ -5,10 +5,15 @@ use redis::{AsyncCommands, SetOptions};
 
 use super::KeyValueCache;
 
-impl<T: AsyncCommands> KeyValueCache for T
-{
+impl<T: AsyncCommands> KeyValueCache for T {
     async fn set(&mut self, key: &str, value: &str, duration: Duration) -> anyhow::Result<()> {
-        self.set_options(key, value, SetOptions::default().with_expiration(redis::SetExpiry::EX(duration.as_secs() as usize))).await?;
+        self.set_options(
+            key,
+            value,
+            SetOptions::default()
+                .with_expiration(redis::SetExpiry::EX(duration.as_secs() as usize)),
+        )
+        .await?;
         Ok(())
     }
 
