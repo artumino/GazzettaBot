@@ -24,6 +24,7 @@ struct Config {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    env_logger::init();
     let config = Config::init_from_env()?;
     info!(
         "Polling feed: {} every {} ms",
@@ -42,7 +43,8 @@ async fn main() -> anyhow::Result<()> {
                     Err(backoff::Error::transient(e))
                 }
             }
-        });
+        })
+        .await?;
 
         tokio::time::sleep(Duration::from_millis(config.poll_interval_ms)).await;
     }
@@ -59,6 +61,7 @@ async fn setup_and_poll(config: &Config, client: &redis::Client) -> anyhow::Resu
     );
     let rsmq = Rsmq::new_with_connection(job_con, false, None);
     let mut producer = RedisJobProducer::new(config.redis_new_article_task_queue.as_str(), rsmq);
+    let _ = producer.setup().await; // ignore error, queue could already exist
 
     info!("Trying to poll feed: {}", config.feed_url);
     poll_feed(config, &mut con, &mut producer).await?;
@@ -86,30 +89,32 @@ async fn process_item(
     article_cache: &mut impl KeyValueCache,
     job_producer: &mut impl JobProducer,
 ) -> anyhow::Result<()> {
-    if let Ok(item_key) = compute_cache_key(item) {
-        info!("Processing item {}", &item_key);
+    match compute_cache_key(item) {
+        Ok(item_key) => {
+            info!("Processing item {}", &item_key);
 
-        let item_content = article_cache.get(&item_key).await?;
-        if item_content.is_none() {
-            let item = fetch_item(item).await?;
-            article_cache
-                .set(
-                    &item_key,
-                    serde_json::to_string(&item)?.as_str(),
-                    Duration::from_secs(config.cache_expire_time_s),
-                )
-                .await?;
-            job_producer.produce_job(&item.header).await?;
+            let item_content = article_cache.get(&item_key).await?;
+            if item_content.is_none() {
+                let item = fetch_item(item).await?;
+                article_cache
+                    .set(
+                        &item_key,
+                        serde_json::to_string(&item)?.as_str(),
+                        Duration::from_secs(config.cache_expire_time_s),
+                    )
+                    .await?;
+                job_producer.produce_job(&item.header).await?;
+            }
+        }
+        Err(e) => {
+            info!("Error processing item: {:?}", e);
         }
     }
     Ok(())
 }
 
 async fn fetch_item(item: &Item) -> anyhow::Result<gazzetta_common::Item> {
-    let header = ItemHeader::new(
-        item.title().context("Missing title")?.to_string(),
-        item.pub_date().context("Missing pub date")?.to_string(),
-    );
+    let header = ItemHeader::new(compute_cache_key(item)?);
     let content = if let Some(link) = item.link() {
         let response = reqwest::get(link).await?;
         Some(response.text().await?)
@@ -119,20 +124,28 @@ async fn fetch_item(item: &Item) -> anyhow::Result<gazzetta_common::Item> {
 
     Ok(gazzetta_common::Item {
         header,
-        summary: item.description().map(|s| s.to_string()),
+        title: item.title().map(|s| s.to_string()),
+        pub_date: item.pub_date().map(|s| s.to_string()),
+        summary: item.content().map(|s| s.to_string()),
         content,
     })
 }
 
 fn compute_cache_key(item: &Item) -> anyhow::Result<String> {
-    Ok(format!(
-        "({},{})",
-        item.title().context("Missing title")?,
-        item.pub_date().context("Missing pub date")?
-    ))
+    Ok(item
+        .guid()
+        .map(|guid| guid.value().to_string())
+        .or_else(|| item.link().map(|link| link.to_string()))
+        .unwrap_or(format!(
+            "({},{},{})",
+            item.title().context("Missing title")?,
+            item.pub_date().context("Missing pub date")?,
+            item.content().context("Missing description")?
+        )))
 }
 
 trait JobProducer {
+    fn setup(&mut self) -> impl Future<Output = anyhow::Result<()>>;
     fn produce_job(&mut self, item: &ItemHeader) -> impl Future<Output = anyhow::Result<()>>;
 }
 
@@ -145,6 +158,13 @@ impl<'a> JobProducer for RedisJobProducer<'a> {
     async fn produce_job(&mut self, item: &ItemHeader) -> anyhow::Result<()> {
         self.rqsm
             .send_message(self.queue_name, serde_json::to_string(item)?, None)
+            .await?;
+        Ok(())
+    }
+
+    async fn setup(&mut self) -> anyhow::Result<()> {
+        self.rqsm
+            .create_queue(self.queue_name, None, None, None)
             .await?;
         Ok(())
     }

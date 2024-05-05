@@ -1,0 +1,23 @@
+services:
+  gazzetta-injest:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+      args:
+        COMPONENT_NAME: gazzetta-injest
+    environment:
+      GAZZETTA_FEED_URL: "https://www.gazzettaufficiale.it/rss/SG"
+      GAZZETTA_REDIS_URL: "redis://redis:6379"
+      GAZZETTA_NEW_ARTICLE_TASK_QUEUE: "article-task-queue"
+      RUST_LOG: "info"
+    depends_on:
+      - redis
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 1s
+      timeout: 3s
+      retries: 5

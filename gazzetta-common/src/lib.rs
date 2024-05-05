@@ -4,13 +4,12 @@ pub mod cache;
 
 #[derive(Serialize, Deserialize)]
 pub struct ItemHeader {
-    pub title: String,
-    pub pub_date: String,
+    pub key: String,
 }
 
 impl ItemHeader {
-    pub fn new(title: String, pub_date: String) -> ItemHeader {
-        ItemHeader { title, pub_date }
+    pub fn new(key: String) -> ItemHeader {
+        ItemHeader { key }
     }
 }
 
@@ -18,12 +17,8 @@ impl ItemHeader {
 pub struct Item {
     #[serde(flatten)]
     pub header: ItemHeader,
+    pub title: Option<String>,
+    pub pub_date: Option<String>,
     pub summary: Option<String>,
     pub content: Option<String>,
-}
-
-impl ItemHeader {
-    pub fn cache_key(&self) -> String {
-        format!("({},{})", self.title, self.pub_date)
-    }
 }
