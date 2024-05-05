@@ -12,6 +12,20 @@ services:
       RUST_LOG: "info"
     depends_on:
       - redis
+  gazzetta-server:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+      args:
+        COMPONENT_NAME: gazzetta-server
+    environment:
+      GAZZETTA_REDIS_URL: "redis://redis:6379"
+      GAZZETTA_NEW_ARTICLE_TASK_QUEUE: "article-task-queue"
+      GAZZETTA_NOTFIY_TASK_QUEUE: "notify-task-queue"
+      SEARCH_KEYWORDS: "ecobonus,rottamazione,rottamare,incentivi,incentivo"
+      RUST_LOG: "info"
+    depends_on:
+      - redis
   redis:
     image: redis:alpine
     ports:

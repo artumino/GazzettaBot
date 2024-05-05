@@ -21,4 +21,13 @@ pub struct Item {
     pub pub_date: Option<String>,
     pub summary: Option<String>,
     pub content: Option<String>,
+    pub url: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct MatchResult {
+    pub matched_words: Vec<String>,
+    pub title: Option<String>,
+    pub summary: Option<String>,
+    pub url: Option<String>,
 }
