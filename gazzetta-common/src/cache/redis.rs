@@ -21,4 +21,9 @@ impl<T: AsyncCommands> KeyValueCache for T {
         let result: Option<String> = self.get(key).await?;
         Ok(result)
     }
+    
+    async fn set_expiration(&mut self, key: &str, duration: Duration) -> anyhow::Result<()> {
+        self.expire(key, duration.as_secs() as i64).await?;
+        Ok(())
+    }
 }

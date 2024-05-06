@@ -10,4 +10,5 @@ pub trait KeyValueCache {
         duration: Duration,
     ) -> impl Future<Output = anyhow::Result<()>>;
     fn get(&mut self, key: &str) -> impl Future<Output = anyhow::Result<Option<String>>>;
+    fn set_expiration(&mut self, key: &str, duration: Duration) -> impl Future<Output = anyhow::Result<()>>;
 }

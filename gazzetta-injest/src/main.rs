@@ -112,6 +112,8 @@ async fn process_item(
                     .await?;
                 job_producer.produce_job(&item.header).await?;
             }
+            
+            article_cache.set_expiration(&item_key, Duration::from_secs(config.cache_expire_time_s)).await?;
         }
         Err(e) => {
             info!("Error processing item: {:?}", e);
