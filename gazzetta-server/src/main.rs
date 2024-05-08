@@ -1,8 +1,9 @@
 // Ideally this would use a relational DB to figure out who and what we need to notify
 // Right now this is hardcoded to what i need
 
-use std::{cell::OnceCell, time::Duration};
+use std::{cell::OnceCell, collections::HashSet, time::Duration};
 
+use aho_corasick::PatternID;
 use envconfig::Envconfig;
 use gazzetta_common::{cache::KeyValueCache, Item, ItemHeader, MatchResult};
 use log::{error, info, warn};
@@ -75,39 +76,7 @@ async fn consume_new_items(
             }
 
             let item: Item = serde_json::from_str(item.unwrap().as_str())?;
-            let search_keywords = OnceCell::new();
-            let search_keywords = search_keywords.get_or_init(|| {
-                config
-                    .search_keywords
-                    .split(',')
-                    .map(|word| word.to_lowercase())
-                    .collect::<Vec<String>>()
-            });
-
-            let lowercase_title = item
-                .title
-                .as_ref()
-                .map(|title| title.to_lowercase())
-                .unwrap_or_default();
-            let lowercase_summary = item
-                .summary
-                .as_ref()
-                .map(|desc| desc.to_lowercase())
-                .unwrap_or_default();
-            let lowercase_content = item
-                .content
-                .as_ref()
-                .map(|content| content.to_lowercase())
-                .unwrap_or_default();
-
-            let matched_words: Vec<_> = search_keywords
-                .iter()
-                .filter(|keyword| {
-                    lowercase_title.contains(*keyword)
-                        || lowercase_summary.contains(*keyword)
-                        || lowercase_content.contains(*keyword)
-                })
-                .collect();
+            let matched_words = find_matches(config, &item);
 
             // TODO: Some outboxing here would be needed, actually
             if !matched_words.is_empty() {
@@ -137,5 +106,74 @@ async fn consume_new_items(
         } else {
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
+    }
+}
+
+fn find_matches(config: &Config, item: &Item) -> Vec<String> {
+    let search_keywords = OnceCell::new();
+    let search_keywords = search_keywords.get_or_init(|| {
+        config
+            .search_keywords
+            .split(',')
+            .map(|word| word.to_lowercase())
+            .collect::<Vec<String>>()
+    });
+    let search_automaton = OnceCell::new();
+    let search_automaton = search_automaton.get_or_init(|| {
+         aho_corasick::AhoCorasick::builder()
+        .ascii_case_insensitive(true)
+        .build(search_keywords)
+        .unwrap()
+    });
+
+    let mut matched_patterns = HashSet::new();
+    add_matches(&item.title, search_automaton, &mut matched_patterns);
+    add_matches(&item.summary, search_automaton, &mut matched_patterns);
+    add_matches(&item.content, search_automaton, &mut matched_patterns);
+
+    let matched_words: Vec<String> = matched_patterns
+        .iter()
+        .map(|pattern_id| search_keywords[*pattern_id].to_string())
+        .collect();
+    matched_words
+}
+
+fn add_matches(corpus: &Option<String>, search_automaton: &aho_corasick::AhoCorasick, matched_patterns: &mut HashSet<PatternID>) {
+    if let Some(ref corpus) = corpus {
+        for mat in search_automaton.find_iter(corpus) {
+            matched_patterns.insert(mat.pattern());
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_find_matches() {
+        let config = Config {
+            search_keywords: "foo,bar,quick brown fox,quick green fox,Dls.G/,gree".to_string(),
+            redis_url: "redis://localhost:6379".to_string(),
+            new_article_task_queue: "new_article_task_queue".to_string(),
+            notify_task_queue: "notify_task_queue".to_string(),
+        };
+        let item = Item {
+            title: Some("foo bar Dls.G/".to_string()),
+            summary: Some("foo bar and the quIck brown fox".to_string()),
+            content: Some("foo bar and the quick foo brown fox".to_string()),
+            header: ItemHeader {
+                key: "key".to_string()
+            },
+            pub_date: Some("".to_string()),
+            url: Some("http://example.com".to_string()),
+        };
+
+        // foo, bar, quick brown fox, Dls.G/
+        let mut matched_words = find_matches(&config, &item);
+        matched_words.sort();
+        let mut expected = vec!["foo", "bar", "quick brown fox", "dls.g/"];
+        expected.sort();
+        assert_eq!(matched_words, expected);
     }
 }

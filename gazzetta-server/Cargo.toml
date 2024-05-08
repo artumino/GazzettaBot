@@ -16,3 +16,4 @@ serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 rsmq_async.workspace = true
+aho-corasick = "1.1.3"
